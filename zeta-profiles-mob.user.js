@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         제타 프로필 자동감지 (모브 프로필 사진 추가)
 // @namespace    zeta-current-profiles
-// @version      1.0.1
+// @version      1.0.2
 // @description  채팅방의 현재 캐릭터/유저 대화 프로필을 수집해 프로필 카드로 표시합니다.
 // @match        https://zeta-ai.io/*
 // @match        https://*.zeta-ai.io/*
@@ -773,11 +773,11 @@
     drawUI();
     requestPaint();
   }
-  async function saveMob(name, description, file, editingKey) {
+  async function saveMob(name, description, file) {
     if (!roomId) throw new Error('제타 채팅방을 열어주세요.');
     name = cleanName(name);
     if (!name) throw new Error('모브 이름을 입력해주세요.');
-    const existing = records.find(row => row.key === editingKey && row.name === name);
+    const existing = records.find(row => row.key === keyFor(roomId, name));
     const image = file || existing?.image;
     if (!image || !photoType.test(image.type)) throw new Error('PNG, JPG, WEBP 또는 GIF 사진을 선택해주세요.');
     if (image.size > 5 * 1024 * 1024) throw new Error('사진 크기는 5MB 이하여야 합니다.');
@@ -895,17 +895,22 @@
     const nameInput = el('input'); nameInput.placeholder = '모브 이름 (채팅에 표시되는 발화자 이름과 동일하게)';
     nameInput.maxLength = 80; nameInput.required = true;
     const description = el('textarea'); description.placeholder = '설명 (선택)';
-    const fileInput = el('input'); fileInput.type = 'file'; fileInput.accept = 'image/png,image/jpeg,image/webp,image/gif'; fileInput.required = true;
+    const fileInput = el('input'); fileInput.type = 'file'; fileInput.accept = 'image/png,image/jpeg,image/webp,image/gif';
     let editingKey;
     const fileHint = el('small', 'zmp-hint', '새 사진을 선택하면 기존 사진이 바뀝니다.');
     fileHint.hidden = true;
     const save = el('button', '', '모브 사진 등록 / 덮어쓰기'); save.type='submit';
     const status = el('small'); status.setAttribute('role','status');
+    function updateFileHint() {
+      const key = keyFor(roomId, cleanName(nameInput.value));
+      fileHint.hidden = !records.some(mob => mob.key === key && mob.image instanceof Blob);
+    }
+    nameInput.addEventListener('input', updateFileHint);
     form.append(nameInput,description,fileInput,fileHint,save,status);
     form.addEventListener('submit', async event => {
       event.preventDefault();
       save.disabled = true;
-      try { await saveMob(nameInput.value, description.value, fileInput.files?.[0], editingKey); }
+      try { await saveMob(nameInput.value, description.value, fileInput.files?.[0]); }
       catch (e) {status.textContent = String(e?.message || e); save.disabled = false; }
     });
     form.prepend(el('p','zmp-hint',roomId ? '현재 채팅방에만 저장됩니다. 말풍선에 발화자 이름이 별도로 표시된 경우 그 이름 옆에 사진을 붙입니다.' : '채팅방에 들어가면 모브를 등록할 수 있습니다.'));
@@ -924,8 +929,7 @@
         nameInput.value = mob.name;
         nameInput.readOnly = true;
         description.value = mob.description || '';
-        fileInput.required = !(mob.image instanceof Blob);
-        fileHint.hidden = fileInput.required;
+        updateFileHint();
         status.textContent = '';
         save.textContent = '변경 사항 저장';
         openForm();
@@ -959,8 +963,7 @@
       form.reset();
       editingKey = undefined;
       nameInput.readOnly = false;
-      fileInput.required = true;
-      fileHint.hidden = true;
+      updateFileHint();
       save.textContent = '모브 사진 등록 / 덮어쓰기';
       status.textContent = '';
       openForm();
