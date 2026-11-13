@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         제타 프로필 자동감지 (모브 프로필 사진 추가)
 // @namespace    zeta-current-profiles
-// @version      1.0.0
+// @version      1.0.1
 // @description  채팅방의 현재 캐릭터/유저 대화 프로필을 수집해 프로필 카드로 표시합니다.
 // @match        https://zeta-ai.io/*
 // @match        https://*.zeta-ai.io/*
@@ -462,7 +462,7 @@
       #zcp-panel[data-theme="light"],#zcp-launch[data-theme="light"]{color-scheme:light;--zcp-panel:#fff;--zcp-text:#242531;--zcp-launch:#f7f7fb;--zcp-control-line:#8a8d9d;--zcp-line:#c5c7d3;--zcp-divider:#dedfe8;--zcp-button:#ededf5;--zcp-button-line:#a1a4b5;--zcp-muted:#505367;--zcp-card:#f3f3f8;--zcp-avatar:#e2e4ef;--zcp-body:#383a49;--zcp-accent:#535873;--zcp-card-line:#c5c7d3;--zcp-form:#eeeef5;--zcp-input:#fff;--zcp-file:#383a49;--zcp-hint:#505367;}
       #zcp-panel .zcp-title-controls{display:flex;align-items:center;gap:6px;margin-inline-start:auto;flex:none}
       #zcp-panel #zcp-theme{min-width:38px;font-size:18px;line-height:1}
-      #zcp-launch{position:fixed;right:12px;bottom:calc(92px + env(safe-area-inset-bottom));z-index:2147483600;background:var(--zcp-launch, #292934);color:var(--zcp-text, #fff);border:1px solid var(--zcp-control-line, #777);border-radius:20px;padding:9px 12px;font:13px system-ui,-apple-system,sans-serif;box-shadow:0 3px 12px #0004}
+      #zcp-launch{touch-action:none;user-select:none;position:fixed;right:12px;bottom:calc(92px + env(safe-area-inset-bottom));z-index:2147483600;background:var(--zcp-launch, #292934);color:var(--zcp-text, #fff);border:1px solid var(--zcp-control-line, #777);border-radius:20px;padding:9px 12px;font:13px system-ui,-apple-system,sans-serif;box-shadow:0 3px 12px #0004}
       #zcp-panel{position:fixed;right:16px;bottom:calc(85px + env(safe-area-inset-bottom, 0px));width:min(380px,calc(100vw - 24px));height:540px;max-height:calc(100vh - 105px);max-height:calc(100dvh - 105px - env(safe-area-inset-bottom, 0px));display:flex;flex-direction:column;overflow:hidden;z-index:2147483601;background:var(--zcp-panel, #141416);color:var(--zcp-text, #fff);border:1px solid var(--zcp-line, #454650);border-radius:14px;box-sizing:border-box;font:15px/1.5 system-ui,-apple-system,sans-serif;box-shadow:0 12px 45px #0005}
       #zcp-panel .zcp-titlebar{flex:none;align-items:center;padding:9px 12px;border-bottom:1px solid var(--zcp-divider, #33343a);cursor:grab;touch-action:none}
       #zcp-panel .zcp-scroll{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:0 12px 16px}
@@ -622,7 +622,59 @@
     window.addEventListener('resize', restoreGeometry);
     restoreGeometry();
     document.body.append(launch,panel);
-    launch.addEventListener('click',()=>{panel.hidden=!panel.hidden;render();});
+    const launchKey = 'zeta-profiles-mob:launch-position';
+    let launchPosition;
+    try { launchPosition = JSON.parse(localStorage.getItem(launchKey)); } catch (_) {}
+    function positionLaunch(left, top) {
+      const x = Math.max(0, Math.min(innerWidth - launch.offsetWidth, left));
+      const y = Math.max(0, Math.min(innerHeight - launch.offsetHeight, top));
+      Object.assign(launch.style, {left:x+'px', top:y+'px', right:'auto', bottom:'auto'});
+      return {left:x, top:y};
+    }
+    function restoreLaunch() {
+      if (Number.isFinite(launchPosition?.left) && Number.isFinite(launchPosition?.top)) {
+        positionLaunch(launchPosition.left, launchPosition.top);
+      }
+    }
+    restoreLaunch();
+    window.addEventListener('resize', restoreLaunch);
+
+    let drag;
+    let suppressClick = false;
+    launch.addEventListener('pointerdown', event => {
+      if (!event.isPrimary || event.button !== 0) return;
+      suppressClick = false;
+      const {left, top} = launch.getBoundingClientRect();
+      drag = {id:event.pointerId, x:event.clientX, y:event.clientY, left, top, moved:false};
+      launch.setPointerCapture(event.pointerId);
+    });
+    launch.addEventListener('pointermove', event => {
+      if (drag?.id !== event.pointerId) return;
+      const dx = event.clientX - drag.x;
+      const dy = event.clientY - drag.y;
+      if (!drag.moved && Math.hypot(dx, dy) < 6) return;
+      drag.moved = true;
+      launchPosition = positionLaunch(drag.left + dx, drag.top + dy);
+    });
+    function finishDrag(event) {
+      if (drag?.id !== event.pointerId) return;
+      suppressClick = drag.moved;
+      drag = null;
+      if (suppressClick) {
+        try { localStorage.setItem(launchKey, JSON.stringify(launchPosition)); } catch (_) {}
+      }
+    }
+    launch.addEventListener('pointerup', finishDrag);
+    launch.addEventListener('pointercancel', finishDrag);
+    launch.addEventListener('lostpointercapture', finishDrag);
+    launch.addEventListener('click', event => {
+      if (suppressClick && event.detail !== 0) {
+        suppressClick = false;
+        return;
+      }
+      panel.hidden = !panel.hidden;
+      render();
+    });
     render();
   }
   function init() {checkRoute();makeUI();}
@@ -721,14 +773,15 @@
     drawUI();
     requestPaint();
   }
-  async function saveMob(name, description, file) {
+  async function saveMob(name, description, file, editingKey) {
     if (!roomId) throw new Error('제타 채팅방을 열어주세요.');
     name = cleanName(name);
     if (!name) throw new Error('모브 이름을 입력해주세요.');
-    if (!file || !/^image\/(?:png|jpeg|webp|gif)$/i.test(file.type)) throw new Error('PNG, JPG, WEBP 또는 GIF 사진을 선택해주세요.');
-    if (file.size > 5 * 1024 * 1024) throw new Error('사진 크기는 5MB 이하여야 합니다.');
-    const existing = records.find(row => row.name === name);
-    const item = {key:keyFor(roomId, name), roomId, name, description:String(description || '').slice(0, 3000), image:file, updatedAt:Date.now()};
+    const existing = records.find(row => row.key === editingKey && row.name === name);
+    const image = file || existing?.image;
+    if (!image || !photoType.test(image.type)) throw new Error('PNG, JPG, WEBP 또는 GIF 사진을 선택해주세요.');
+    if (image.size > 5 * 1024 * 1024) throw new Error('사진 크기는 5MB 이하여야 합니다.');
+    const item = {key:keyFor(roomId, name), roomId, name, description:String(description || '').slice(0, 3000), image, updatedAt:Date.now()};
     await transaction('readwrite', s => s.put(item));
     await syncRoom(true);
     return !!existing;
@@ -843,13 +896,16 @@
     nameInput.maxLength = 80; nameInput.required = true;
     const description = el('textarea'); description.placeholder = '설명 (선택)';
     const fileInput = el('input'); fileInput.type = 'file'; fileInput.accept = 'image/png,image/jpeg,image/webp,image/gif'; fileInput.required = true;
+    let editingKey;
+    const fileHint = el('small', 'zmp-hint', '새 사진을 선택하면 기존 사진이 바뀝니다.');
+    fileHint.hidden = true;
     const save = el('button', '', '모브 사진 등록 / 덮어쓰기'); save.type='submit';
     const status = el('small'); status.setAttribute('role','status');
-    form.append(nameInput,description,fileInput,save,status);
+    form.append(nameInput,description,fileInput,fileHint,save,status);
     form.addEventListener('submit', async event => {
       event.preventDefault();
       save.disabled = true;
-      try { await saveMob(nameInput.value, description.value, fileInput.files?.[0]); }
+      try { await saveMob(nameInput.value, description.value, fileInput.files?.[0], editingKey); }
       catch (e) {status.textContent = String(e?.message || e); save.disabled = false; }
     });
     form.prepend(el('p','zmp-hint',roomId ? '현재 채팅방에만 저장됩니다. 말풍선에 발화자 이름이 별도로 표시된 경우 그 이름 옆에 사진을 붙입니다.' : '채팅방에 들어가면 모브를 등록할 수 있습니다.'));
@@ -862,7 +918,18 @@
       card.append(header);
       if (mob.description) card.append(el('p','zmp-mob-body',mob.description));
       const edit=el('button','','수정'); edit.type='button';
-      edit.addEventListener('click',()=>{nameInput.value=mob.name;description.value=mob.description||'';openForm();});
+      edit.addEventListener('click', () => {
+        form.reset();
+        editingKey = mob.key;
+        nameInput.value = mob.name;
+        nameInput.readOnly = true;
+        description.value = mob.description || '';
+        fileInput.required = !(mob.image instanceof Blob);
+        fileHint.hidden = fileInput.required;
+        status.textContent = '';
+        save.textContent = '변경 사항 저장';
+        openForm();
+      });
       const del=el('button','','삭제'); del.type='button';
       del.addEventListener('click', async ()=>{if(confirm('모브 '+mob.name+'의 사진과 설명을 삭제할까요?')) await deleteMob(mob.name);});
       const actions=el('div','zcp-actions');
@@ -880,7 +947,7 @@
     function openForm() {
       form.hidden = false;
       add.setAttribute('aria-expanded', 'true');
-      nameInput.focus();
+      (editingKey ? description : nameInput).focus();
     }
 
     add.addEventListener('click', () => {
@@ -890,6 +957,11 @@
         return;
       }
       form.reset();
+      editingKey = undefined;
+      nameInput.readOnly = false;
+      fileInput.required = true;
+      fileHint.hidden = true;
+      save.textContent = '모브 사진 등록 / 덮어쓰기';
       status.textContent = '';
       openForm();
     });
