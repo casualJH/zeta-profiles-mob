@@ -5,7 +5,7 @@
 ## 설치
 
 1. 브라우저에서 Tampermonkey를 설치하고 제타 사이트에서 실행을 허용합니다.
-2. [유저스크립트 1.0.2 설치](https://raw.githubusercontent.com/casualJH/zeta-profiles-mob/main/zeta-profiles-mob.user.js)를 엽니다.
+2. [유저스크립트 1.0.3 설치](https://raw.githubusercontent.com/casualJH/zeta-profiles-mob/main/zeta-profiles-mob.user.js)를 엽니다.
 3. 기존 `zeta-current-profiles`, `zeta-mob-photos` 또는 이전 통합본이 별도로 활성화되어 있다면 끄고 제타 채팅방을 새로고침합니다.
 
 ## 사용 방법
