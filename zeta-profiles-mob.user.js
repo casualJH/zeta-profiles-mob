@@ -1,7 +1,10 @@
 // ==UserScript==
 // @name         제타 프로필 자동감지 (모브 프로필 사진 추가)
 // @namespace    zeta-current-profiles
-// @version      1.0.2
+// @version      1.0.3
+// @homepageURL  https://github.com/casualJH/zeta-profiles-mob
+// @updateURL    https://raw.githubusercontent.com/casualJH/zeta-profiles-mob/main/zeta-profiles-mob.user.js
+// @downloadURL  https://raw.githubusercontent.com/casualJH/zeta-profiles-mob/main/zeta-profiles-mob.user.js
 // @description  채팅방의 현재 캐릭터/유저 대화 프로필을 수집해 프로필 카드로 표시합니다.
 // @match        https://zeta-ai.io/*
 // @match        https://*.zeta-ai.io/*
