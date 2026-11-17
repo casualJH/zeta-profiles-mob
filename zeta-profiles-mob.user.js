@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         제타 프로필 자동감지 (모브 프로필 사진 추가)
 // @namespace    zeta-current-profiles
-// @version      1.0.4-beta.2
+// @version      1.0.5-beta.1
 // @homepageURL  https://github.com/casualJH/zeta-profiles-mob
 // @updateURL    https://raw.githubusercontent.com/casualJH/zeta-profiles-mob/dev/zeta-profiles-mob.user.js
 // @downloadURL  https://raw.githubusercontent.com/casualJH/zeta-profiles-mob/dev/zeta-profiles-mob.user.js
@@ -27,6 +27,44 @@
       return url.origin === scene && scenePath.test(url.pathname);
     })?.contentWindow;
   }
+  function probeScene(frame) {
+    return new Promise(resolve => {
+      const probe = new MessageChannel();
+      const finish = connected => {
+        clearTimeout(timer);
+        probe.port1.close();
+        resolve(connected);
+      };
+      const timer = setTimeout(() => finish(false), 1000);
+      probe.port1.onmessage = event => finish(event.data === 'pong' && currentScene() === frame);
+      try {
+        frame.postMessage({channel, type:'ping'}, scene, [probe.port2]);
+      } catch (_) {
+        finish(false);
+      }
+    });
+  }
+
+  function showSceneAccess(trigger) {
+    let dialog = document.getElementById('zmp-frame-access');
+    if (!dialog) {
+      dialog = document.createElement('dialog');
+      dialog.id = 'zmp-frame-access';
+      dialog.setAttribute('aria-labelledby', 'zmp-frame-access-title');
+      dialog.style.cssText = 'width:min(320px,90vw);max-height:85vh;overflow:auto;box-sizing:border-box;color:#f5f5f5;background:#30303a;border:1px solid #777;border-radius:12px;padding:14px;font:14px/1.5 system-ui,sans-serif';
+      dialog.innerHTML = `
+        <strong id="zmp-frame-access-title">Tampermonkey 사이트 접근 안내</strong>
+        <p>채팅 프레임에 연결하지 못했습니다. 모브 사진을 말풍선에 적용하려면 아래 링크를 새 탭에서 여세요.</p>
+        <p><a href="https://frame.pingpong.ai" target="_blank" rel="noopener noreferrer" style="color:#9fd5ff">frame.pingpong.ai 열기 ↗</a></p>
+        <p>브라우저의 Tampermonkey 메뉴에서 <strong>사이트 접근 허용</strong>을 누른 뒤, 제타 채팅방으로 돌아와 새로고침하세요.</p>
+        <form method="dialog" style="display:flex;justify-content:flex-end"><button type="submit">확인</button></form>`;
+      document.body.append(dialog);
+    }
+    if (dialog.open) return;
+    dialog.addEventListener('close', () => trigger.focus(), {once:true});
+    dialog.showModal();
+  }
+
   function fromScene(event) {
     return event.origin === scene && event.source === currentScene() && event.data?.channel === channel;
   }
@@ -998,11 +1036,23 @@
       (editingKey ? description : nameInput).focus();
     }
 
-    add.addEventListener('click', () => {
+    add.addEventListener('click', async () => {
       if (!form.hidden) {
         form.hidden = true;
         add.setAttribute('aria-expanded', 'false');
         return;
+      }
+      const frame = currentScene();
+      if (frame) {
+        const room = roomId;
+        add.disabled = true;
+        const connected = await probeScene(frame);
+        if (!add.isConnected || roomId !== room) return;
+        add.disabled = false;
+        if (!connected) {
+          showSceneAccess(add);
+          return;
+        }
       }
       form.reset();
       editingKey = undefined;
@@ -1134,7 +1184,13 @@
   }
   if (inScene) {
     window.addEventListener('message', event => {
-      if (!fromParent(event) || event.data.type !== 'mob-photos') return;
+      if (!fromParent(event)) return;
+      if (event.data.type === 'ping') {
+        event.ports[0]?.postMessage('pong');
+        event.ports[0]?.close();
+        return;
+      }
+      if (event.data.type !== 'mob-photos') return;
       const next = event.data.roomId;
       const photos = event.data.photos;
       if ((next !== null && (typeof next !== 'string' || !ROOM_REGEX.test('/rooms/' + next)))
