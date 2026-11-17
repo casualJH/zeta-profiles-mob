@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         제타 프로필 자동감지 (모브 프로필 사진 추가)
 // @namespace    zeta-current-profiles
-// @version      1.0.5-beta.1
+// @version      1.0.4-beta.3
 // @homepageURL  https://github.com/casualJH/zeta-profiles-mob
 // @updateURL    https://raw.githubusercontent.com/casualJH/zeta-profiles-mob/dev/zeta-profiles-mob.user.js
 // @downloadURL  https://raw.githubusercontent.com/casualJH/zeta-profiles-mob/dev/zeta-profiles-mob.user.js
@@ -54,9 +54,9 @@
       dialog.style.cssText = 'width:min(320px,90vw);max-height:85vh;overflow:auto;box-sizing:border-box;color:#f5f5f5;background:#30303a;border:1px solid #777;border-radius:12px;padding:14px;font:14px/1.5 system-ui,sans-serif';
       dialog.innerHTML = `
         <strong id="zmp-frame-access-title">Tampermonkey 사이트 접근 안내</strong>
-        <p>채팅 프레임에 연결하지 못했습니다. 모브 사진을 말풍선에 적용하려면 아래 링크를 새 탭에서 여세요.</p>
+        <p>모브 사진을 채팅에 적용하려면 채팅 프레임에 연결해야 해요.</p>
         <p><a href="https://frame.pingpong.ai" target="_blank" rel="noopener noreferrer" style="color:#9fd5ff">frame.pingpong.ai 열기 ↗</a></p>
-        <p>브라우저의 Tampermonkey 메뉴에서 <strong>사이트 접근 허용</strong>을 누른 뒤, 제타 채팅방으로 돌아와 새로고침하세요.</p>
+        <p>열린 탭에서 Tampermonkey 메뉴의 <strong>사이트 접근 허용</strong>을 누른 뒤, 제타 채팅방으로 돌아와 새로고침해 주세요.</p>
         <form method="dialog" style="display:flex;justify-content:flex-end"><button type="submit">확인</button></form>`;
       document.body.append(dialog);
     }
