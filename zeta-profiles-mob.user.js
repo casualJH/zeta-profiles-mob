@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         제타 프로필 자동감지 (모브 프로필 사진 추가)
 // @namespace    zeta-current-profiles
-// @version      1.0.4-beta.3
+// @version      1.0.4-beta.4
 // @homepageURL  https://github.com/casualJH/zeta-profiles-mob
 // @updateURL    https://raw.githubusercontent.com/casualJH/zeta-profiles-mob/dev/zeta-profiles-mob.user.js
 // @downloadURL  https://raw.githubusercontent.com/casualJH/zeta-profiles-mob/dev/zeta-profiles-mob.user.js
@@ -51,7 +51,7 @@
       dialog = document.createElement('dialog');
       dialog.id = 'zmp-frame-access';
       dialog.setAttribute('aria-labelledby', 'zmp-frame-access-title');
-      dialog.style.cssText = 'width:min(320px,90vw);max-height:85vh;overflow:auto;box-sizing:border-box;color:#f5f5f5;background:#30303a;border:1px solid #777;border-radius:12px;padding:14px;font:14px/1.5 system-ui,sans-serif';
+      dialog.style.cssText = 'position:fixed;inset:0;margin:auto;width:min(320px,90vw);height:fit-content;max-height:85vh;overflow:auto;box-sizing:border-box;color:#f5f5f5;background:#30303a;border:1px solid #777;border-radius:12px;padding:14px;font:14px/1.5 system-ui,sans-serif';
       dialog.innerHTML = `
         <strong id="zmp-frame-access-title">Tampermonkey 사이트 접근 안내</strong>
         <p>모브 사진을 채팅에 적용하려면 채팅 프레임에 연결해야 해요.</p>
