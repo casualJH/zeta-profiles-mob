@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         제타 프로필 자동감지 (모브 프로필 사진 추가)
 // @namespace    zeta-current-profiles
-// @version      1.0.4-beta.1
+// @version      1.0.4-beta.2
 // @homepageURL  https://github.com/casualJH/zeta-profiles-mob
 // @updateURL    https://raw.githubusercontent.com/casualJH/zeta-profiles-mob/dev/zeta-profiles-mob.user.js
 // @downloadURL  https://raw.githubusercontent.com/casualJH/zeta-profiles-mob/dev/zeta-profiles-mob.user.js
@@ -792,7 +792,7 @@
   const keyFor = (room, name) => JSON.stringify([room, name]);
   function cleanName(name) { return String(name || '').trim().replace(/\s+/g, ' ').slice(0, 80); }
   function clearUrls() {
-    for (const url of imageUrls.values()) URL.revokeObjectURL(url);
+    for (const url of imageUrls.values()) if (url.startsWith('blob:')) URL.revokeObjectURL(url);
     imageUrls.clear();
   }
   async function syncRoom(force = false) {
@@ -1055,7 +1055,7 @@
     output.append(root);
     panelUI = root;
   }
-  const avatarSelector = inScene ? '[role="log"] button:not([aria-label]) img[alt]:not([alt=""])' : '[data-sentry-component="LeftTextContent"] > img[alt]';
+  const avatarSelector = inScene ? '[role="log"] [data-key^="message-"] img[alt]:not([alt=""]), [aria-label="Chat messages"] button:not([aria-label="View image"]) img[alt]:not([alt=""])' : '[data-sentry-component="LeftTextContent"] > img[alt]';
 
   function restoreAvatar(host, entry) {
     if (host.getAttribute('src') === entry.src) {
@@ -1073,6 +1073,7 @@
   }
 
   let sentScene, sentRevision;
+  let photoGeneration = 0;
   function paintChat() {
     const frame = inScene ? null : currentScene();
     if (frame && (frame !== sentScene || sentRevision !== revision)) {
@@ -1086,6 +1087,7 @@
     const seen = new Set();
     if (roomId && names.size) {
       for (const host of document.querySelectorAll(avatarSelector)) {
+        if (inScene && host.closest('button[aria-label="View image"]')) continue;
         const src = names.get(cleanName(host.alt));
         if (!src) continue;
         seen.add(host);
@@ -1125,7 +1127,10 @@
     window.addEventListener('popstate',()=>syncRoom());
     window.addEventListener('hashchange',()=>syncRoom());
     window.addEventListener('resize',requestPaint);
-    setInterval(()=>syncRoom(),1200);
+    setInterval(()=>{
+      syncRoom();
+      if (currentScene() !== sentScene) requestPaint();
+    },1200);
   }
   if (inScene) {
     window.addEventListener('message', event => {
@@ -1138,7 +1143,16 @@
       clearUrls();
       roomId = next;
       records = photos.filter(row => typeof row?.name === 'string' && row.image instanceof Blob);
-      for (const {key, image} of records) imageUrls.set(key, URL.createObjectURL(image));
+      const generation = ++photoGeneration;
+      for (const {key, image} of records) {
+        const reader = new FileReader();
+        reader.addEventListener('load', () => {
+          if (generation !== photoGeneration || typeof reader.result !== 'string') return;
+          imageUrls.set(key, reader.result);
+          requestPaint();
+        }, {once:true});
+        reader.readAsDataURL(image);
+      }
       requestPaint();
     });
     const initScene = () => {
