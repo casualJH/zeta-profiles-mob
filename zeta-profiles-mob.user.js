@@ -1,18 +1,45 @@
 // ==UserScript==
 // @name         제타 프로필 자동감지 (모브 프로필 사진 추가)
 // @namespace    zeta-current-profiles
-// @version      1.0.3
+// @version      1.0.4
 // @homepageURL  https://github.com/casualJH/zeta-profiles-mob
 // @updateURL    https://raw.githubusercontent.com/casualJH/zeta-profiles-mob/main/zeta-profiles-mob.user.js
 // @downloadURL  https://raw.githubusercontent.com/casualJH/zeta-profiles-mob/main/zeta-profiles-mob.user.js
 // @description  채팅방의 현재 캐릭터/유저 대화 프로필을 수집해 프로필 카드로 표시합니다.
 // @match        https://zeta-ai.io/*
 // @match        https://*.zeta-ai.io/*
+// @match        https://frame.pingpong.ai/*
 // @run-at       document-start
-// @noframes
 // @sandbox      raw
 // @grant        none
 // ==/UserScript==
+(() => {
+  'use strict';
+  const site = 'https://zeta-ai.io';
+  const scene = 'https://frame.pingpong.ai';
+  const scenePath = /^\/v\d+\/index\.html$/;
+  const channel = 'zeta-profiles-mob:scene';
+  const inScene = location.origin === scene;
+  if (inScene ? window.parent === window || !scenePath.test(location.pathname) : window.top !== window) return;
+  function currentScene() {
+    return [...document.querySelectorAll('iframe[title="scene"][src]')].find(frame => {
+      const url = new URL(frame.src);
+      return url.origin === scene && scenePath.test(url.pathname);
+    })?.contentWindow;
+  }
+  function fromScene(event) {
+    return event.origin === scene && event.source === currentScene() && event.data?.channel === channel;
+  }
+  function fromParent(event) {
+    return event.origin === site && event.source === window.parent && event.data?.channel === channel;
+  }
+  function toParent(message) {
+    window.parent.postMessage({channel, ...message}, site);
+  }
+  function toScene(message) {
+    currentScene()?.postMessage({channel, ...message}, scene);
+  }
+  const profilePath = /^\/v1\/(?:rooms\/[0-9a-f-]{36}|plots\/[0-9a-f-]{36}(?:\/rooms\/[0-9a-f-]{36}\/user-personas\/(?:select|selected))?|characters\/[0-9a-f-]{36})\/?$/i;
 (function () {
   'use strict';
   if (window.__zetaCurrentProfilesTest01) return;
@@ -134,6 +161,10 @@
   Object.defineProperty(window, 'zetaCurrentProfiles', {configurable:false, enumerable:false, value:Object.freeze({get:publicState})});
 
   function observe(path, payload, status) {
+    if (inScene) {
+      if (profilePath.test(path)) toParent({type:'profile', path, payload, status});
+      return;
+    }
     const isPersonaSelect = /^\/v1\/plots\/[^/]+\/rooms\/[^/]+\/user-personas\/(select|selected)\/?$/i.test(path);
     if (isPersonaSelect && payload === null && status === 200 && roomFromText(path) === state.roomId) {
       state.user = null;
@@ -310,7 +341,7 @@
     }
     const room = roomGeneration;
     const response = nativeFetch.apply(this, arguments);
-    if (path && (/\/rooms\//.test(path) || /profile|persona|character|bot|agent|\/plots\//i.test(path))) {
+    if (path && (inScene ? profilePath.test(path) : /\/rooms\/|profile|persona|character|bot|agent|\/plots\//i.test(path))) {
       Promise.resolve(response).then(r => inspectResponse(r, path, room)).catch(() => {});
     }
     return response;
@@ -328,7 +359,7 @@
     checkRoute();
     const room = roomGeneration;
     const path = xhrInfo.get(this);
-    if (path && (/\/rooms\//.test(path) || /profile|persona|character|bot|agent|\/plots\//i.test(path))) {
+    if (path && (inScene ? profilePath.test(path) : /\/rooms\/|profile|persona|character|bot|agent|\/plots\//i.test(path))) {
       this.addEventListener('load', function () {
         if (room !== roomGeneration) return;
         try {
@@ -347,8 +378,17 @@
     return nativeSend.apply(this, arguments);
   };
 
+  if (inScene) return;
+  window.addEventListener('message', event => {
+    if (!fromScene(event) || event.data.type !== 'profile') return;
+    const {path, payload, status} = event.data;
+    if (typeof path !== 'string' || !profilePath.test(path)) return;
+    checkRoute();
+    observe(path, payload, status);
+  });
+
   function renderSoon() {
-    if (refreshPending) return;
+    if (inScene || refreshPending) return;
     refreshPending = true;
     setTimeout(() => {refreshPending=false; render();}, 120);
   }
@@ -752,7 +792,7 @@
   const keyFor = (room, name) => JSON.stringify([room, name]);
   function cleanName(name) { return String(name || '').trim().replace(/\s+/g, ' ').slice(0, 80); }
   function clearUrls() {
-    for (const url of imageUrls.values()) URL.revokeObjectURL(url);
+    for (const url of imageUrls.values()) if (url.startsWith('blob:')) URL.revokeObjectURL(url);
     imageUrls.clear();
   }
   async function syncRoom(force = false) {
@@ -773,6 +813,7 @@
         }
       } catch (e) { console.error('[제타 모브 사진] 저장소 읽기 실패', e); }
     }
+    sentRevision = undefined;
     drawUI();
     requestPaint();
   }
@@ -1014,7 +1055,7 @@
     output.append(root);
     panelUI = root;
   }
-  const avatarSelector = '[data-sentry-component="LeftTextContent"] > img[alt]';
+  const avatarSelector = inScene ? '[role="log"] [data-key^="message-"] img[alt]:not([alt=""]), [aria-label="Chat messages"] button:not([aria-label="View image"]) img[alt]:not([alt=""])' : '[data-sentry-component="LeftTextContent"] > img[alt]';
 
   function restoreAvatar(host, entry) {
     if (host.getAttribute('src') === entry.src) {
@@ -1031,11 +1072,22 @@
     for (const [host, entry] of avatars) restoreAvatar(host, entry);
   }
 
+  let sentScene, sentRevision;
+  let photoGeneration = 0;
   function paintChat() {
+    const frame = inScene ? null : currentScene();
+    if (frame && (frame !== sentScene || sentRevision !== revision)) {
+      sentScene = frame;
+      sentRevision = revision;
+      toScene({type:'mob-photos', roomId, photos:records
+        .filter(record => record.image instanceof Blob)
+        .map(({key, name, image}) => ({key, name, image}))});
+    }
     const names = new Map(records.map(row => [row.name, imageUrls.get(row.key)]));
     const seen = new Set();
     if (roomId && names.size) {
       for (const host of document.querySelectorAll(avatarSelector)) {
+        if (inScene && host.closest('button[aria-label="View image"]')) continue;
         const src = names.get(cleanName(host.alt));
         if (!src) continue;
         seen.add(host);
@@ -1075,9 +1127,53 @@
     window.addEventListener('popstate',()=>syncRoom());
     window.addEventListener('hashchange',()=>syncRoom());
     window.addEventListener('resize',requestPaint);
-    setInterval(()=>syncRoom(),1200);
+    setInterval(()=>{
+      syncRoom();
+      if (currentScene() !== sentScene) requestPaint();
+    },1200);
   }
+  if (inScene) {
+    window.addEventListener('message', event => {
+      if (!fromParent(event) || event.data.type !== 'mob-photos') return;
+      const next = event.data.roomId;
+      const photos = event.data.photos;
+      if ((next !== null && (typeof next !== 'string' || !ROOM_REGEX.test('/rooms/' + next)))
+        || !Array.isArray(photos)) return;
+      clearAvatars();
+      clearUrls();
+      roomId = next;
+      records = photos.filter(row => typeof row?.name === 'string' && row.image instanceof Blob);
+      const generation = ++photoGeneration;
+      for (const {key, image} of records) {
+        const reader = new FileReader();
+        reader.addEventListener('load', () => {
+          if (generation !== photoGeneration || typeof reader.result !== 'string') return;
+          imageUrls.set(key, reader.result);
+          requestPaint();
+        }, {once:true});
+        reader.readAsDataURL(image);
+      }
+      requestPaint();
+    });
+    const initScene = () => {
+      if (!document.body) return;
+      new MutationObserver(requestPaint).observe(document.body, {
+        childList:true, subtree:true, attributes:true, attributeFilter:['alt','src','srcset']
+      });
+      toParent({type:'mob-ready'});
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initScene, {once:true});
+    else initScene();
+    return;
+  }
+  window.addEventListener('message', event => {
+    if (!fromScene(event) || event.data.type !== 'mob-ready') return;
+    sentScene = null;
+    requestPaint();
+  });
   function init() {makeStyle();syncRoom(true);observe();}
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded',init,{once:true});
   else init();
+})();
+
 })();
